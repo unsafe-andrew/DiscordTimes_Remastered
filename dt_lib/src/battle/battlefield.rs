@@ -489,7 +489,7 @@ fn unit_interaction(
 pub fn handle_action(
     action: Action,
     battle: &mut BattleInfo,
-    armys: &mut Vec<Army>,
+    armies: &mut Vec<Army>,
 ) -> Option<(ActionResult, (usize, usize))> {
     match action {
         Action::Cell(pos, army) => {
@@ -498,15 +498,15 @@ pub fn handle_action(
                 return None;
             }
             let active = battle.active_unit;
-            let res = unit_interaction(battle, armys, pos, army);
+            let res = unit_interaction(battle, armies, pos, army);
             if res.1 {
-                battle.active_unit = battle.search_next_active(&armys);
+                battle.active_unit = battle.search_next_active(&armies);
             }
-            move_thing(battle, armys);
+            move_thing(battle, armies);
             res.0.and_then(|v| Some((v, active.unwrap())))
         }
         Action::Move(army, troop, to) => {
-            let army = &mut armys[army];
+            let army = &mut armies[army];
             let unit_inactive = {
                 let troop = &mut army.troops[troop].get();
                 troop.pos = UnitPos::from_index(to);
@@ -518,9 +518,9 @@ pub fn handle_action(
             army.recalc_army_hitmap();
             let active = battle.active_unit;
             if unit_inactive {
-                battle.active_unit = battle.search_next_active(&armys);
+                battle.active_unit = battle.search_next_active(&armies);
             }
-            move_thing(battle, armys);
+            move_thing(battle, armies);
             Some((ActionResult::Move, active.unwrap()))
         }
     }

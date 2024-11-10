@@ -104,7 +104,7 @@ async fn game_init() -> State {
     };
     let (objects, req_assets_objects) = parse_objects();
 	let req_assets_tiles = ("assets/Terrain", TILES.iter().map(|tile| tile.sprite().to_string()).collect());
-    let req_assets_list = [req_assets_items, req_assets_objects, req_assets_units, req_assets_tiles];
+    let req_assets_list = [req_assets_items, req_assets_units, req_assets_tiles];
     let assets = load_assets(&req_assets_list).await;
     let (mut gamemap, events) = parse_story(
         &units,

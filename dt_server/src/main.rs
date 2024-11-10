@@ -1,29 +1,26 @@
 mod hotel;
 
 use crate::hotel::*;
+use alkahest::{deserialize, serialize};
 use axum::extract::ws::Message as AWsMessage;
 use axum::extract::ws::{WebSocket, WebSocketUpgrade};
 use axum::extract::State as AState;
 use axum::http::HeaderMap;
-use axum::Router;
+use axum::{Error as AError, Router};
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::cell::LazyCell;
 use std::collections::HashSet;
 use std::error::Error;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+use std::task::Context;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::protocol::Message as TWsMessage;
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
-enum Message {
-    Event1(String),
-    Event2(isize),
-}
 
 struct WsSocket {
     stream: SplitStream<WebSocket>,
@@ -59,56 +56,77 @@ use dt_lib::{
         unitstats::ModifyUnitStats,
     },
 };
-
+type MutRc<T> = Arc<Mutex<T>>;
 enum ServerService {
     Matchmaking,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct State {
-    pub gamemap: GameMap,
-    pub battle: Option<BattleInfo>,
-    pub connection: Option<ConnectionManager>,
-    pub gameevents: Vec<Event>,
-    pub gameloop_time: Duration,
-    pub units: HashMap<usize, Unit>,
-    pub objects: Vec<ObjectInfo>,
-    pub pause: bool,
+    pub hotel: MutRc<Hotel>,
 }
-fn setup_connection(state: &mut State) {
-    state.connection = Some(ConnectionManager {
-        con: Connection::Host(GameServer::new(false)),
-        gamemap: state.gamemap.clone(),
-        battle: state.battle.clone(),
-        events: state.gameevents.clone(),
-        last_updated: Instant::now(),
-    });
+struct RoomInstance {
+	pub armies: Vec<Army>,
+	pub battle: BattleInfo,
 }
-fn setup() {
-    let settings = parse_settings();
-    parse_items(None, &settings.locale);
-    let res = parse_units(None);
-    if let Err(err) = res {
-        panic!("{}", err);
-    }
-    let Ok((units, req_assets)) = res else {
-        panic!("Unit parsing error")
-    };
-    let objects = parse_objects().0;
-
-    let (mut gamemap, gameevents) = parse_story(
-        &units,
-        &objects,
-        &settings.locale,
-        &settings.additional_locale,
+impl RoomInstance {
+	pub fn new(units: &Vec<Unit>) -> Self {
+		let mut armies = Vec::new();
+		armies.push(gen_army(0, units));
+		armies.push(gen_army(1, units));
+		let battle = BattleInfo::new(&mut armies, 0, 1);
+		Self {
+			armies,
+			battle
+		}
+	}
+}
+fn gen_army(army_num: usize, units: &Vec<Unit>) -> Army {
+    let mut army = Army::new(
+        vec![],
+        ArmyStats {
+            gold: 0,
+            mana: 0,
+            army_name: String::new(),
+        },
+        vec![],
+        (0, 0),
+        true,
+        dt_lib::battle::control::Control::PC,
     );
-    gamemap.calc_hitboxes(&objects);
+    for _ in 0..10 {
+        army.add_troop(Troop::new(units.get(4).unwrap().clone()).into())
+            .ok();
+    }
+    army
 }
-
+static UNITS: LazyLock<Vec<Unit>> = LazyLock::new(|| parse_units(None).unwrap().0);
+fn setup() -> State {
+    let settings = parse_settings();
+    let _ = parse_items(None, &settings.locale);
+	State {
+		hotel: Arc::new(Mutex::new(Hotel::new())),
+	}
+}
+fn process_move(message: AWsMessage, instance: &mut RoomInstance, army: usize) ->  Result<AWsMessage, AError> {
+	let RoomInstance { armies, battle } = instance;
+	if battle.active_unit.is_some_and(|x| x.0 != army) {
+		return Err(AError::new("fuck off!"));
+	}
+	let buf = message.into_data();
+	let Ok((target_army, target_index)) = deserialize::<(usize, usize), (usize, usize)>(&*buf) else {
+		return Err(AError::new("bad data."));
+	};
+	handle_action(Action::Cell(target_army, target_index), battle, armies);
+	let mut buf = vec![];
+	serialize::<(Vec<Army>, BattleInfo), (Vec<Army>, BattleInfo)>((armies.clone(), battle.clone()), &mut buf);
+	Ok(AWsMessage::Binary(buf))
+}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Create a hotel with a room
-    let hotel = Arc::new(Mutex::new(Hotel::new()));
-
+	let state = setup();
+    let hotel = state.hotel;
+	
     // Start the server
     let app = Router::new()
         .route("/ws", axum::routing::any(ws_handler))
@@ -129,7 +147,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 async fn ws_handler(
     ws: WebSocketUpgrade,
     headers: HeaderMap,
-    AState(hotel): AState<Arc<Mutex<Hotel>>>,
+    AState(hotel): AState<MutRc<Hotel>>,
 ) -> impl axum::response::IntoResponse {
     let room_code = headers
         .get("room-code")
@@ -137,10 +155,10 @@ async fn ws_handler(
         .to_str()
         .unwrap()
         .to_owned();
-    ws.on_upgrade(move |socket| handle_socket(socket, room_code, hotel))
+    ws.on_upgrade(move |socket| handle_socket(socket, room_code, (hotel, RoomInstance::new(&UNITS))))
 }
 
-async fn handle_socket(socket: WebSocket, room_code: String, hotel: Arc<Mutex<Hotel>>) {
+async fn handle_socket(socket: WebSocket, room_code: String, (hotel, mut instance): (Arc<Mutex<Hotel>>, RoomInstance)) {
     let room = {
         let mut hotel = hotel.lock().await;
         match hotel.put_socket(&room_code, socket) {
@@ -154,12 +172,21 @@ async fn handle_socket(socket: WebSocket, room_code: String, hotel: Arc<Mutex<Ho
         }
     };
 
-    // A way to use `forward` with multiple clients is folding their sinks with fanout
+	fn stream_with_id<T, E>(
+        stream: impl StreamExt<Item = Result<T, E>>,
+        id: usize,
+    ) -> impl StreamExt<Item = (T, usize)> {
+        stream
+            .filter_map(|x| futures::future::ready(x.ok()))
+            .map(move |x| (x, id))
+    }
 
-    #[rustfmt::skip]
-    tokio::try_join!(
-        room.0.stream.forward(room.1.sink),
-        room.1.stream.forward(room.0.sink),
+    futures::stream::select(
+        stream_with_id(room.0.stream, 0),
+        stream_with_id(room.1.stream, 1),
     )
-    .unwrap();
+		.map(|(x, id)| process_move(x, &mut instance, id))
+		.forward(room.1.sink.fanout(room.0.sink))
+		.await
+		.unwrap();
 }
