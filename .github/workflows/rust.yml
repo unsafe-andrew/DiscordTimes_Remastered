@@ -13,7 +13,6 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
@@ -22,4 +21,4 @@ jobs:
         token: ${{ secrets.PAT_TOKEN }}
     - uses: actions/checkout@v4
     - name: Build
-      run: cargo build --verbose
+      run: rustup default nightly && cargo build --verbose
