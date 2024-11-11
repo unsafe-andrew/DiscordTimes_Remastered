@@ -227,7 +227,7 @@ pub struct EventData {
     pub _empty4: [u8; 14], // 151-163
     pub custom_picture_for_event: u16, // 164-???(165) кол-во байт кастомной картинки к событию, которая лежит в файле после текстовых данных.
     pub _empty5: [u8; 6], // 166-171
-
+}
 #[repr(packed(1))]
 #[derive(FromBytes, Unaligned, Debug, Clone)]
 pub struct BuildingData {
