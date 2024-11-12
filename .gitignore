@@ -2,7 +2,6 @@
 /.idea/**
 **/*.html
 /.ts/**
-**/.lock
 /dt/*
 DT_THINGS/*
 Water/**
@@ -10,7 +9,6 @@ notan/**
 notan
 #*
 /dt_launcher/launcher/
-Cargo.lock
 
 !*/assets/*
 !*/map/*
