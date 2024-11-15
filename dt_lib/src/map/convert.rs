@@ -4,6 +4,7 @@ use bytes::*;
 use bzip2::*;
 use encoding_rs::*;
 use num_enum::{Default, FromPrimitive, IntoPrimitive};
+use core::str;
 use std::{
     fs,
     fs::File,
@@ -225,7 +226,7 @@ pub struct EventData {
     pub repeat_after_answ_yes_checkmark: u8, // 150
     pub _empty4: [u8; 14],  // 151-163
     pub custom_picture_for_event: u16, // 164-???(165) кол-во байт кастомной картинки к событию, которая лежит в файле после текстовых данных.
-    pub _empty5: [u8; 6],              // 166-171
+    pub _empty5: [u8; 5],              // 166-171
 }
 #[repr(packed(1))]
 #[derive(FromBytes, Unaligned, Debug, Clone)]
@@ -341,8 +342,9 @@ pub struct LightOrEvent {
     pub y: u16,
     pub id: u8,
     pub map_model: u8,
-    pub empty: [u8; 33],
+    pub _empty: [u8; 33],
     pub light_radius: u8,
+	pub _empty1: [u8; 59]
 }
 #[derive(FromBytes, Unaligned, PartialEq, Eq, Debug, Copy, Clone)]
 #[repr(packed(1))]
@@ -357,6 +359,9 @@ pub struct MapData {
     pub map: Vec<u8>,
     pub decos: Vec<Decoration>,
     pub armies: Vec<ArmyData>,
+	pub lanterns: Vec<LightOrEvent>,
+	pub events: Vec<EventData>,
+	pub text: Vec<String>
 }
 pub fn parse_dtm_map(path: &Path) -> Result<MapData, ()> {
     let mut buf: bytes::Bytes = {
@@ -408,7 +413,7 @@ pub fn parse_dtm_map(path: &Path) -> Result<MapData, ()> {
     let mut armies_data = data.copy_to_bytes(settings.armies_size as usize);
     let mut lanterns_data = data.copy_to_bytes(settings.lanterns_size as usize);
     let mut events_data = data.copy_to_bytes(settings.events_size as usize);
-    // let mut texts_data = data.copy_to_bytes(settings.text_size as usize);
+    let mut texts_data = data;
     dbg!(surface_data.remaining());
     fn parse_by_2_bytes(mut bytes: Bytes) -> Vec<u8> {
         let mut map = vec![];
@@ -443,11 +448,37 @@ pub fn parse_dtm_map(path: &Path) -> Result<MapData, ()> {
     fn parse_lanterns(bytes: Bytes) -> Vec<LightOrEvent> {
         parse_vec_by_bytes(bytes)
     }
-    fn parse_text(mut bytes: Bytes) -> Vec<String> {
+    fn parse_text(bytes: &mut Bytes) -> Vec<String> {
+		fn copy_until(bytes: &mut Bytes, amount: usize, until: &[u8]) -> Vec<u8> {
+			let mut buf = vec![];
+			loop {
+				if bytes.is_empty() {
+					break buf;
+				}
+				let copy = bytes.copy_to_bytes(amount);
+				if copy.as_bytes() == until {
+					break buf;
+				} else {
+					buf.extend_from_slice(copy.as_bytes());
+				}
+			}
+		}
+		const TEXT_SECTION_START: [u8; 8] = *b"\x00>-Text-";
+		let section = bytes.copy_to_bytes(TEXT_SECTION_START.len());
+		if section.as_bytes() != TEXT_SECTION_START {
+			println!("Wrong text section start {:?} {:?}", section.as_bytes(), str::from_utf8(section.as_bytes()));
+		}
         let mut text_buffer = vec![];
-        for i in bytes.utf8_chunks() {
-            println!("{}", i.valid());
-        }
+        loop {
+			let buf = copy_until(bytes, 1, &[0]);
+			let string = if buf.is_empty() {
+				String::new()
+			} else { WINDOWS_1251.decode(&buf).0.to_string() };
+			if string.contains("LIT") || bytes.is_empty() {
+				break;
+			}
+			text_buffer.push(string);
+		}
         text_buffer
     }
     let mut map = parse_by_2_bytes(surface_data);
@@ -456,13 +487,16 @@ pub fn parse_dtm_map(path: &Path) -> Result<MapData, ()> {
     let buildings = parse_buildings(buildings_data);
     let lanterns = parse_lanterns(lanterns_data);
     let events = parse_events(events_data);
-    //let texts = parse_text(texts_data);
+    let text = parse_text(&mut texts_data);
     Ok(MapData {
         settings,
         buildings,
         decos,
         map,
+		events,
+		lanterns,
         armies,
+		text,
     })
 }
 mod test {
