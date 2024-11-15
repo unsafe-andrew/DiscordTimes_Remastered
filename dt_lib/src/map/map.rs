@@ -3,9 +3,8 @@ use super::{
     tile::*,
 };
 use crate::{
-    battle::army::Army,
+    battle::{army::Army, control::Relations},
     time::time::Time,
-	battle::control::Relations
 };
 use advini::{Ini, IniParseError, Section, SectionError, Sections};
 use alkahest::alkahest;

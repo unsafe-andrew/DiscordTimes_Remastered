@@ -1,3 +1,4 @@
+use advini::{Ini, IniParseError};
 use alkahest::alkahest;
 use boolinator::Boolinator;
 use num::{Num, NumCast, One, ToPrimitive, Zero};
@@ -115,6 +116,17 @@ impl Percent {
     }
     pub fn calc<V: Num + NumCast>(self, all: V) -> V {
         all * NumCast::from(self.0).unwrap() / NumCast::from(100).unwrap()
+    }
+}
+impl Ini for Percent {
+    fn eat(chars: std::str::Chars) -> Result<(Self, std::str::Chars), advini::IniParseError> {
+        let Ok((num, chars)) = i16::eat(chars) else {
+            return Err(IniParseError::Error("Cant parse percent"));
+        };
+        Ok((Percent(num), chars))
+    }
+    fn vomit(&self) -> String {
+        self.0.vomit()
     }
 }
 impl Default for Percent {

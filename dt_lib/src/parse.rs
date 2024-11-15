@@ -132,8 +132,12 @@ use super::{
     },
 };
 use crate::{
-    battle::army::{Army, ArmyStats},
+    battle::{
+        army::{Army, ArmyStats},
+        control::Relations,
+    },
     items,
+    map::object::BuildingVariant,
 };
 use advini::*;
 use ini_core::{Item, Parser};
@@ -153,7 +157,7 @@ use tracing_mutex::stdsync::TracingMutex as Mutex;
 //use wasm_bindgen_futures::spawn_local;
 #[cfg(not(target_arch = "wasm32"))]
 pub fn read_file_as_string(path: String) -> String {
-    let res = String::from_utf8(std::fs::read(path.clone()).unwrap()).unwrap();
+    let res = String::from_utf8(std::fs::read(dbg!(path.clone())).unwrap()).unwrap();
     return res;
 }
 #[cfg(target_arch = "wasm32")]
@@ -510,12 +514,13 @@ pub fn parse_units(path: Option<&str>) -> Result<(Vec<Unit>, (&'static str, Vec<
             units[*index].1.info.next_unit = upgrade;
         }
     }
+    units.sort_by_key(|v| v.0);
+    let units = units.into_iter().map(|v| v.1).collect::<Vec<Unit>>();
+    if let Ok(mut units_write) = UNITS.write() {
+        units_write.append(&mut units.clone());
+    };
     if error_collector.is_empty() {
-        units.sort_by_key(|v| v.0);
-        Ok((
-            units.into_iter().map(|v| v.1).collect(),
-            ("assets/Icons", req_assets),
-        ))
+        Ok((units, ("assets/Icons", req_assets)))
     } else {
         Err(error_collector.join("\n"))
     }
@@ -1200,18 +1205,24 @@ fn parse_mapdata(
                 buildings.push((
                     id.unwrap(),
                     MapBuildingdata {
+                        spells_to_learn: Vec::new(),
+                        variant: BuildingVariant::Castle,
+                        garrison: Vec::new(),
+                        group: 0,
+                        mana_income: 0,
+                        relations: Relations::default(),
                         id: objects
                             .into_iter()
                             .position(|obj| &obj.name == object_name.as_ref().unwrap())
                             .unwrap(),
                         name,
                         desc,
-                        event,
+                        events: event,
                         market,
                         recruitment,
                         pos: pos.unwrap(),
-                        defense: defense.unwrap(),
-                        income,
+                        additional_defense: defense.unwrap(),
+                        gold_income: income,
                         owner,
                     },
                 ));

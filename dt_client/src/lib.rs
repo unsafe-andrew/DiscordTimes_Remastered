@@ -24,22 +24,22 @@ pub fn greet(name: &str) {
 
 #[wasm_bindgen]
 pub fn connect(room: &str) -> Result<(), JsValue> {
-	// Connect to an echo server
+    // Connect to an echo server
     let ws = WebSocket::new("ws://localhost:3000/ws")?;
     // For small binary messages, like CBOR, Arraybuffer is more efficient than Blob handling
     ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
     // create callback
-	let mut state = ();
+    let mut state = ();
     let cloned_ws = ws.clone();
     let onmessage_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
         // Handle difference Text/Binary,...
         if let Ok(abuf) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
             console_log!("message event, received arraybuffer: {:?}", abuf);
             let array = js_sys::Uint8Array::new(&abuf);
-			let buf = array.to_vec();
-			
+            let buf = array.to_vec();
+
             // here you can for example use Serde Deserialize decode the message
-            // for demo purposes 
+            // for demo purposes
         } else if let Ok(blob) = e.data().dyn_into::<web_sys::Blob>() {
             console_log!("message event, received blob: {:?}", blob);
             // better alternative to juggling with FileReader is to use https://crates.io/crates/gloo-file
@@ -90,4 +90,3 @@ pub fn connect(room: &str) -> Result<(), JsValue> {
 
     Ok(())
 }
-

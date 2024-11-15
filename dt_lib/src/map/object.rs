@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    battle::{army::Army, troop::Troop},
+    battle::{army::Army, control::Relations, troop::Troop},
     items::item::ITEMS,
     units::unit::Unit,
 };
+use advini::*;
 use alkahest::alkahest;
 use rand::{seq::SliceRandom, thread_rng};
 
@@ -25,29 +26,111 @@ pub struct ObjectInfo {
     pub size: (u8, u8),
 }
 
-enum Building {
-    Village(u64, u64),
+#[derive(Clone, Debug)]
+#[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
+pub struct Village {
+    pub max_gold: u64,
+    pub max_mana: u64,
+}
+impl Ini for Village {
+    fn eat(chars: std::str::Chars) -> Result<(Self, std::str::Chars), IniParseError> {
+        let (max_gold, chars) = u64::eat(chars)?;
+        let (max_mana, chars) = u64::eat(chars)?;
+        Ok((Self { max_gold, max_mana }, chars))
+    }
+    fn vomit(&self) -> String {
+        [self.max_gold.vomit(), self.max_mana.vomit()].join(",")
+    }
+}
+#[derive(Clone, Debug, Ini)]
+#[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
+pub enum BuildingVariant {
+    Village(Village),
     Castle,
     Ruined,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Sections)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub struct MapBuildingdata {
     pub name: String,
+    #[alias([description])]
+    #[default_value = "String::new()"]
     pub desc: String,
-    pub id: usize,
-    pub event: Vec<usize>,
-    pub market: Option<Market>,
-    pub recruitment: Option<Recruitment>,
-    pub pos: (usize, usize),
-    pub defense: u64,
-    pub income: u64,
-    pub owner: Option<usize>,
-}
 
+    pub id: usize,
+
+    #[default_value = "vec![]"]
+    pub events: Vec<usize>,
+    #[default_value = "BuildingVariant::Castle"]
+    pub variant: BuildingVariant,
+    #[inline_parsing]
+    pub market: Option<Market>,
+    #[inline_parsing]
+    pub recruitment: Option<Recruitment>,
+
+    pub pos: (usize, usize),
+    #[default_value = "None"]
+    pub owner: Option<usize>,
+
+    #[default_value = "vec![]"]
+    pub garrison: Vec<Unit>,
+    #[default_value = "0u64"]
+    pub additional_defense: u64,
+
+    #[default_value = "0u64"]
+    pub gold_income: u64,
+    #[default_value = "0u64"]
+    pub mana_income: u64,
+
+    #[default_value = "vec![]"]
+    pub spells_to_learn: Vec<usize>,
+
+    pub relations: Relations,
+    #[default_value = "0usize"]
+    pub group: usize,
+}
+impl MapBuildingdata {
+    pub fn new(
+        name: String,
+        desc: String,
+        id: usize,
+        events: Vec<usize>,
+        variant: BuildingVariant,
+        market: Option<Market>,
+        recruitment: Option<Recruitment>,
+        pos: (usize, usize),
+        owner: Option<usize>,
+        garrison: Vec<Unit>,
+        additional_defense: u64,
+        gold_income: u64,
+        mana_income: u64,
+        spells_to_learn: Vec<usize>,
+        relations: Relations,
+        group: usize,
+    ) -> Self {
+        Self {
+            name,
+            desc,
+            id,
+            events,
+            variant,
+            market,
+            recruitment,
+            pos,
+            owner,
+            garrison,
+            additional_defense,
+            gold_income,
+            mana_income,
+            spells_to_learn,
+            relations,
+            group,
+        }
+    }
+}
 const RECRUIT_COST: f64 = 2.0;
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Sections)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub struct Market {
     pub itemcost_range: (u64, u64),
@@ -55,6 +138,13 @@ pub struct Market {
     pub max_items: usize,
 }
 impl Market {
+    fn new(itemcost_range: (u64, u64), items: Vec<usize>, max_items: usize) -> Self {
+        Self {
+            itemcost_range,
+            items,
+            max_items,
+        }
+    }
     fn update(&mut self) {
         for _ in self.max_items - self.items.len()..0 {
             let items = ITEMS.lock().unwrap();
@@ -106,13 +196,31 @@ pub struct RecruitUnit {
     pub unit: usize,
     pub count: usize,
 }
-#[derive(Clone, Debug)]
+impl Ini for RecruitUnit {
+    fn eat(chars: std::str::Chars) -> Result<(Self, std::str::Chars), IniParseError> {
+        let (unit, chars) = usize::eat(chars)?;
+        let (count, chars) = usize::eat(chars)?;
+        Ok((Self { unit, count }, chars))
+    }
+    fn vomit(&self) -> String {
+        [self.unit.vomit(), self.count.vomit()].join(",")
+    }
+}
+impl RecruitUnit {
+    fn new(unit: usize, count: usize) -> Self {
+        Self { unit, count }
+    }
+}
+#[derive(Clone, Debug, Sections)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub struct Recruitment {
     pub units: Vec<RecruitUnit>,
     pub cost_modify: f64,
 }
 impl Recruitment {
+    pub fn new(units: Vec<RecruitUnit>, cost_modify: f64) -> Self {
+        Self { units, cost_modify }
+    }
     pub fn buy(&mut self, buyer: &mut Army, unit_num: usize, units: &Vec<Unit>) -> Result<(), ()> {
         if self.can_buy(buyer, unit_num, units) {
             buyer.add_troop(

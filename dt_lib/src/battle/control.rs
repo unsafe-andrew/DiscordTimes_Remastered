@@ -31,9 +31,14 @@ impl Ini for Relations {
     }
 }
 impl Default for Relations {
-	fn default() -> Self {
-		Self { player: 0, ally: 0, neighbour: 128, enemy: 255 }
-	}
+    fn default() -> Self {
+        Self {
+            player: 0,
+            ally: 0,
+            neighbour: 128,
+            enemy: 255,
+        }
+    }
 }
 #[derive(Clone, Debug, Default)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
@@ -69,30 +74,30 @@ impl Ini for Control {
 
 #[derive(Clone, Debug, Default)]
 pub struct PC_ControlSetings {
-	xp_like_player: bool,
-	xp_add: u64,
-	units_dont_have_money: bool,
-	ignores_ai_armys: bool,
-	targets_player: bool,
-	forbid_random_targets: bool,
-	forbid_random_talks: bool,
-	not_interested_in_buildings: bool,
-	patrol_radius: Option<u64>,
-	relations: Relations,
+    xp_like_player: bool,
+    xp_add: u64,
+    units_dont_have_money: bool,
+    ignores_ai_armys: bool,
+    targets_player: bool,
+    forbid_random_targets: bool,
+    forbid_random_talks: bool,
+    not_interested_in_buildings: bool,
+    patrol_radius: Option<u64>,
+    relations: Relations,
 }
 #[derive(Clone, Debug)]
 pub enum Target {
-	Army(usize),
-	Building(usize)
+    Army(usize),
+    Building(usize),
 }
 #[derive(Clone, Debug)]
 pub enum Plan {
-	ToTax,
-	ToMarket,
-	ToTalk
+    ToTax,
+    ToMarket,
+    ToTalk,
 }
 #[derive(Clone, Debug, Default)]
 pub struct PC_ControlState {
-	current_target: Option<Target>,
-	plan: Option<Plan>
+    current_target: Option<Target>,
+    plan: Option<Plan>,
 }

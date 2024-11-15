@@ -50,11 +50,31 @@ impl Index<&String> for Assets {
 }
 static LOCALE: Lazy<RwLock<Locale>> =
     Lazy::new(|| RwLock::new(Locale::new("Rus".into(), "Eng".into())));
+static UNITS: Lazy<RwLock<Vec<Unit>>> = Lazy::new(|| RwLock::new(vec![]));
+static OBJECTS: Lazy<RwLock<Vec<ObjectInfo>>> = Lazy::new(|| RwLock::new(vec![]));
+macro_rules! units {
+    () => {
+        &UNITS.read().unwrap()
+    };
+}
+macro_rules! units_mut {
+    () => {
+        &mut UNITS.write().unwrap()
+    };
+}
+macro_rules! objects {
+    () => {
+        &OBJECTS.read().unwrap()
+    };
+}
+macro_rules! objects_mut {
+    () => {
+        &mut OBJECTS.write().unwrap()
+    };
+}
 #[derive(Debug)]
 struct State {
     pub assets: Assets,
-    pub units: Vec<Unit>,
-    pub objects: Vec<ObjectInfo>,
     pub game: Game,
     pub ui: Ui,
 }
@@ -82,8 +102,9 @@ async fn load_assets(req_assets_list: &[(&str, Vec<String>)]) -> Assets {
         .map(|v| v.ok_or(()))
         .collect::<Result<Vec<Texture2D>, ()>>()
     else {
-        panic!("{}", error_collector.join("\n"));
+        panic!("No asssets!")
     };
+    println!("{}", error_collector.join("\n"));
     Assets::new(asset_names.into_iter().zip(assets).collect())
 }
 async fn game_init() -> State {
@@ -93,30 +114,41 @@ async fn game_init() -> State {
         locale.set_lang((&settings.locale, &settings.additional_locale));
         parse_locale(&[&settings.locale, &settings.additional_locale], locale);
     }
-    let req_assets_items = parse_items(None, &settings.locale);
-    let res = parse_units(None);
-    if let Err(err) = res {
-        error!("{}", err);
-        panic!("{}", err);
-    }
-    let Ok((units, req_assets_units)) = res else {
-        panic!("Unit parsing error")
+    let assets = {
+        let req_assets_items = parse_items(None, &settings.locale);
+        let res = parse_units(None);
+        if let Err(err) = res {
+            error!("{}", err);
+            panic!("{}", err);
+        }
+        let Ok((mut units, req_assets_units)) = res else {
+            panic!("Unit parsing error")
+        };
+        units_mut!().append(&mut units);
+        let (mut objects, req_assets_objects) = parse_objects();
+        objects_mut!().append(&mut objects);
+        dbg!(units!().len(), objects!().len());
+        let req_assets_tiles = (
+            "assets/Terrain",
+            TILES.iter().map(|tile| tile.sprite().to_string()).collect(),
+        );
+        let req_assets_list = [
+            req_assets_objects,
+            req_assets_items,
+            req_assets_units,
+            req_assets_tiles,
+        ];
+        load_assets(&req_assets_list).await
     };
-    let (objects, req_assets_objects) = parse_objects();
-	let req_assets_tiles = ("assets/Terrain", TILES.iter().map(|tile| tile.sprite().to_string()).collect());
-    let req_assets_list = [req_assets_items, req_assets_units, req_assets_tiles];
-    let assets = load_assets(&req_assets_list).await;
     let (mut gamemap, events) = parse_story(
-        &units,
-        &objects,
+        units!(),
+        objects!(),
         &settings.locale,
         &settings.additional_locale,
     );
-    gamemap.calc_hitboxes(&objects);
+    gamemap.calc_hitboxes(objects!());
     State {
         assets,
-        units,
-        objects,
         ui: Ui {
             main: Menu::Main,
             stack: Vec::new(),
@@ -150,6 +182,7 @@ fn window_conf() -> Conf {
 enum Menu {
     Main,
     Map(Camera2D),
+    Atlas,
     Battle,
     EventMessage,
 }
@@ -158,37 +191,47 @@ struct Ui {
     pub main: Menu,
     pub stack: Vec<Menu>,
 }
-const SIZE: (f32, f32) = (54., 50.);
+const SIZE: (f32, f32) = (256., 242.);
 fn draw_map(assets: &Assets, camera: &mut Camera2D, game: &mut Game) {
-	let gamemap = match game {
-		Game::Single(Scenario { gamemap, battle, events }) => gamemap,
-		Game::Online(conn) => &mut conn.gamemap,
-	};
-
-	for i in 0..MAP_SIZE {
-		for j in 0..MAP_SIZE {
-			let tile = TILES[gamemap.tilemap[i][j]];
-			draw_texture(assets.get(&tile.sprite().to_string()), i as f32 * SIZE.0, j as f32 * SIZE.1, Color::default());
-		}
-	}
-	if is_key_down(KeyCode::W) {
-		camera.offset += Vec2::new(0., -1.)
-	}
-	if is_key_down(KeyCode::D) {
-		camera.offset += Vec2::new(1., 0.);
-	}
-	if is_key_down(KeyCode::A) {
-		camera.offset += Vec2::new(-1., 0.);
-	}
-	if is_key_down(KeyCode::S) {
-		camera.offset += Vec2::new(0., 1.);
-	}
-	if is_key_down(KeyCode::Equal) {
-		camera.zoom += Vec2::new(0.01, 0.01);
-	}
-	if is_key_down(KeyCode::Minus) {
-		camera.zoom -= Vec2::new(0.01, 0.01);
-	}
+    let gamemap = match game {
+        Game::Single(Scenario {
+            gamemap,
+            battle,
+            events,
+        }) => gamemap,
+        Game::Online(conn) => &mut conn.gamemap,
+    };
+    set_camera(camera);
+    for i in 0..MAP_SIZE {
+        for j in 0..MAP_SIZE {
+            let tile = TILES[gamemap.tilemap[i][j]];
+            draw_texture(
+                assets.get(&tile.sprite().to_string()),
+                i as f32 * SIZE.0,
+                j as f32 * SIZE.1,
+                WHITE,
+            );
+        }
+    }
+    draw_text("Loading game map...", 0., 0., 0.5, BLACK);
+    if is_key_down(KeyCode::W) {
+        camera.offset += Vec2::new(0., -0.01)
+    }
+    if is_key_down(KeyCode::D) {
+        camera.offset += Vec2::new(-0.01, 0.);
+    }
+    if is_key_down(KeyCode::A) {
+        camera.offset += Vec2::new(0.01, 0.);
+    }
+    if is_key_down(KeyCode::S) {
+        camera.offset += Vec2::new(0., 0.01);
+    }
+    if is_key_down(KeyCode::Equal) {
+        camera.zoom += Vec2::new(0.001, 0.001);
+    }
+    if is_key_down(KeyCode::Minus) {
+        camera.zoom -= Vec2::new(0.001, 0.001);
+    }
 }
 fn draw_menu(state: &mut State) {
     match &mut state.ui.main {
@@ -198,20 +241,40 @@ fn draw_menu(state: &mut State) {
                 .ui(&mut *root_ui(), |ui| {
                     ui.label(Some((50., 50.).into()), "Discord Times");
                     if ui.button(Some((50., 100.).into()), "Start") {
-                        state.ui.main = Menu::Map(Camera2D::default());
+                        state.ui.main = Menu::Map(Camera2D::from_display_rect(Rect::new(
+                            0.,
+                            0.,
+                            screen_width(),
+                            screen_height(),
+                        )));
+                    }
+                    if ui.button(Some((50., 150.).into()), "Atlas") {
+                        state.ui.main = Menu::Atlas;
                     }
                 });
         }
         Menu::Map(camera) => {
-			draw_map(&state.assets, camera, &mut state.game);
-		}
+            draw_map(&state.assets, camera, &mut state.game);
+        }
+        Menu::Atlas => draw_texture(
+            state
+                .assets
+                .inner
+                .values()
+                .skip(macroquad::time::get_time() as usize % state.assets.inner.len())
+                .next()
+                .unwrap(),
+            0.,
+            0.,
+            WHITE,
+        ),
         _ => {}
     }
 }
 fn draw_ui(state: &mut State) {
     draw_menu(state);
     //for menu in state.ui.stack.clone() {
-        //draw_menu(menu, state);
+    //draw_menu(menu, state);
     //}
 }
 #[macroquad::main(window_conf)]
