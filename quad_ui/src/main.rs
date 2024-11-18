@@ -204,7 +204,7 @@ fn draw_map(assets: &Assets, camera: &mut Camera2D, game: &mut Game) {
     set_camera(camera);
     for i in 0..MAP_SIZE {
         for j in 0..MAP_SIZE {
-            let tile = TILES[gamemap.tilemap[i][j]];
+            let tile = TILES[gamemap.tilemap[(i, j)]];
             draw_texture(
                 assets.get(&tile.sprite().to_string()),
                 i as f32 * SIZE.0,

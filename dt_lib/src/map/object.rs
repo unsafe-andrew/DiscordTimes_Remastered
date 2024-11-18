@@ -2,11 +2,12 @@ use std::collections::HashMap;
 
 use crate::{
     battle::{army::Army, control::Relations, troop::Troop},
-    items::item::ITEMS,
+    items::{item::ITEMS, Item},
     units::unit::Unit,
 };
 use advini::*;
 use alkahest::alkahest;
+use num_enum::FromPrimitive;
 use rand::{seq::SliceRandom, thread_rng};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -45,11 +46,21 @@ impl Ini for Village {
 #[derive(Clone, Debug, Ini)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub enum BuildingVariant {
+    Town,
     Village(Village),
     Castle,
-    Ruined,
+    Fort,
+    Tavern,
+    Market,
+    Church,
+    Forge,
+    Verf,
+    Altar,
+    Mine,
+    Ruins(Vec<Item>),
+    StoneBridge,
+    WoodenBridge,
 }
-
 #[derive(Clone, Debug, Sections)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub struct MapBuildingdata {
@@ -57,6 +68,8 @@ pub struct MapBuildingdata {
     #[alias([description])]
     #[default_value = "String::new()"]
     pub desc: String,
+	#[default_value = "String::new()"]
+	pub owner_name: String,
 
     pub id: usize,
 
@@ -90,55 +103,16 @@ pub struct MapBuildingdata {
     #[default_value = "0usize"]
     pub group: usize,
 }
-impl MapBuildingdata {
-    pub fn new(
-        name: String,
-        desc: String,
-        id: usize,
-        events: Vec<usize>,
-        variant: BuildingVariant,
-        market: Option<Market>,
-        recruitment: Option<Recruitment>,
-        pos: (usize, usize),
-        owner: Option<usize>,
-        garrison: Vec<Unit>,
-        additional_defense: u64,
-        gold_income: u64,
-        mana_income: u64,
-        spells_to_learn: Vec<usize>,
-        relations: Relations,
-        group: usize,
-    ) -> Self {
-        Self {
-            name,
-            desc,
-            id,
-            events,
-            variant,
-            market,
-            recruitment,
-            pos,
-            owner,
-            garrison,
-            additional_defense,
-            gold_income,
-            mana_income,
-            spells_to_learn,
-            relations,
-            group,
-        }
-    }
-}
 const RECRUIT_COST: f64 = 2.0;
 #[derive(Clone, Debug, Sections)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub struct Market {
     pub itemcost_range: (u64, u64),
-    pub items: Vec<usize>,
+    pub items: Vec<Item>,
     pub max_items: usize,
 }
 impl Market {
-    fn new(itemcost_range: (u64, u64), items: Vec<usize>, max_items: usize) -> Self {
+    fn new(itemcost_range: (u64, u64), items: Vec<Item>, max_items: usize) -> Self {
         Self {
             itemcost_range,
             items,
@@ -157,7 +131,7 @@ impl Market {
             self.items.append(
                 &mut nice_items
                     .choose_multiple(&mut thread_rng(), self.max_items)
-                    .map(|(index, _)| **index)
+                    .map(|(index, _)| Item { index: **index })
                     .collect(),
             );
         }
@@ -172,22 +146,14 @@ impl Market {
         }
     }
     fn can_buy(&self, buyer: &Army, item_num: usize) -> bool {
-        if ITEMS.lock().unwrap()[self
-            .items
-            .get(item_num)
-            .expect("Trying to get item at unknown place")]
-        .sells
+        if self.items[item_num].get_info().sells
         {
             return buyer.stats.gold >= self.get_item_cost(item_num);
         }
         false
     }
     fn get_item_cost(&self, item_num: usize) -> u64 {
-        ITEMS.lock().unwrap()[self
-            .items
-            .get(item_num)
-            .expect("Trying to get item at unknown place")]
-        .cost
+        self.items[item_num].get_info().cost
     }
 }
 #[derive(Clone, Debug)]

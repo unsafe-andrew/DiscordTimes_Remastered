@@ -19,7 +19,7 @@ use num::{integer::sqrt, pow};
 use once_cell::sync::Lazy;
 use pathfinding::directed::astar::astar;
 
-use super::control::Control;
+use super::control::{Control, PC_ControlSetings};
 #[derive(Clone, Debug, Default, Sections)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub struct ArmyStats {
@@ -70,6 +70,7 @@ pub struct Army {
     pub defeated: bool,
     //#[default_value = "Control::PC"]
     pub control: Control,
+	pub pc_settings: Option<PC_ControlSetings>,
     //#[unused]
     pub path: Vec<(usize, usize)>,
 }
@@ -101,6 +102,7 @@ impl Army {
     ) -> Self {
         let hitmap: Vec<Option<usize>> = (0..*MAX_TROOPS).map(|_| None::<usize>).collect();
         let mut army = Army {
+			pc_settings: None,
             troops: Vec::new(),
             building: None,
             hitmap,
@@ -221,8 +223,8 @@ impl Army {
         Ok(())
     }
 
-    pub fn add_item(&mut self, item: usize) {
-        self.inventory.push(Item { index: item })
+    pub fn add_item(&mut self, item: Item) {
+        self.inventory.push(item)
     }
     pub fn remove_item(&mut self, rem_item: usize) {
         if let Some(index) = self
@@ -304,14 +306,14 @@ pub fn find_path(
             }
             .into_iter()
             .filter(|p: &(usize, usize)| {
-                let hitbox = &gamemap.hitmap[p.0][p.1];
+                let hitbox = &gamemap.hitmap[*p];
                 hitbox.passable()
                     && (!(hitbox.need_transport ^ on_transport)
                         || hitbox.building.is_some_and(|n| {
                             objects[gamemap.buildings[n].id].obj_type == ObjectType::Bridge
                         }))
             })
-            .map(|p| (p, 10 / TILES[gamemap.tilemap[p.0][p.1]].walkspeed))
+            .map(|p| (p, 10 / TILES[gamemap.tilemap[p]].walkspeed))
         },
         |&p| dist(&p, &goal),
         |&p| p == goal,

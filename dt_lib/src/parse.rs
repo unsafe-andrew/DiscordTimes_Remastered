@@ -112,7 +112,7 @@ d-Vampirizm=[{отсутствие строки}/1-100] — +вампиризм
 
  */
 use math_thingies::add_opt;
-use num::Num;
+use num::{integer::Roots, Num};
 
 use super::{
     battle::{control::Control, troop::Troop},
@@ -137,10 +137,10 @@ use crate::{
         control::Relations,
     },
     items,
-    map::object::BuildingVariant,
+    map::{map::TileMap, object::BuildingVariant},
 };
 use advini::*;
-use ini_core::{Item, Parser};
+use ini_core::{Item as IniItem, Parser};
 use math_thingies::Percent;
 use once_cell::sync::Lazy;
 use std::{
@@ -600,12 +600,12 @@ fn parse_for_props(path: &str) -> HashMap<String, String> {
     let parser = Parser::new(&*ini_doc).auto_trim(true);
     for item in parser {
         match item {
-            Item::Section(_) => {}
-            Item::Property(k, v) => {
+            IniItem::Section(_) => {}
+            IniItem::Property(k, v) => {
                 props.insert(k.to_lowercase().into(), v.into());
             }
-            Item::Blank | Item::Action(_) | Item::Comment(_) => {}
-            Item::Error(err) => panic!("{}", err),
+            IniItem::Blank | IniItem::Action(_) | IniItem::Comment(_) => {}
+            IniItem::Error(err) => panic!("{}", err),
         }
     }
     props
@@ -987,13 +987,13 @@ fn parse_mapdata(
     locale: &mut Locale,
     objects: &Objects,
 ) -> (
-    Tilemap<usize>,
-    Tilemap<Option<usize>>,
+    TileMap<usize>,
+	Vec<usize>,
     Vec<MapBuildingdata>,
     Vec<Army>,
 ) {
-    let mut tilemap: Option<Tilemap<usize>> = None;
-    let mut decomap: Option<Tilemap<Option<usize>>> = None;
+    let mut tilemap: Option<TileMap<usize>> = None;
+    let mut decomap: Vec<usize> = vec![];
 
     let mut armys = Vec::new();
     let mut buildings = Vec::new();
@@ -1005,45 +1005,17 @@ fn parse_mapdata(
                     match &*prop.0 {
                         "tilemap" => {
                             tilemap = Some({
-                                let mut tiles = prop
+                                let tilemap = prop
                                     .1
                                     .split(|ch: char| !ch.is_ascii_digit())
                                     .map(|ch| ch.parse::<usize>().unwrap());
-                                (0..MAP_SIZE)
-                                    .map(|_| {
-                                        (0..MAP_SIZE)
-                                            .map(|_| tiles.next().unwrap())
-                                            .collect::<Vec<_>>()
-                                            .try_into()
-                                            .unwrap()
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .try_into()
-                                    .unwrap()
-                            })
+								TileMap::new(tilemap)
+                            });
                         }
                         "decomap" => {
-                            decomap = Some({
-                                let (tiles, _) = <Vec<usize> as Ini>::eat(prop.1.chars()).unwrap();
-                                // prop.1.split(|ch: char| !ch.is_ascii_digit())
-                                // 	.map(|ch|
-                                // 		 if ch=="0" {
-                                // 			 None
-                                // 		 } else { Some(ch.parse().unwrap()) }
-                                // 	);
-                                (0..MAP_SIZE)
-                                    .map(|_| {
-                                        (0..MAP_SIZE)
-                                            .zip(tiles.iter())
-                                            .map(|(_, v)| if *v == 0 { None } else { Some(*v) })
-                                            .collect::<Vec<_>>()
-                                            .try_into()
-                                            .unwrap()
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .try_into()
-                                    .unwrap()
-                            })
+                            decomap = {
+                                Vec::<usize>::eat(prop.1.chars()).unwrap().0
+                            }
                         }
                         _ => {}
                     }
@@ -1151,7 +1123,7 @@ fn parse_mapdata(
                         "id" => id = Some(prop.1.parse().unwrap()),
                         "type" => building_type = Some(prop.1),
                         "owner" => owner = Some(prop.1.parse().unwrap()),
-                        "items" => items = split_and_parse(prop.1),
+                        "items" => items = split_and_parse::<usize>(prop.1).iter().map(|index| Item { index: *index }).collect(),
                         "defense" => defense = prop.1.parse().ok(),
                         "object" => object_name = prop.1.into(),
                         "itemcost_range" => {
@@ -1205,6 +1177,7 @@ fn parse_mapdata(
                 buildings.push((
                     id.unwrap(),
                     MapBuildingdata {
+						owner_name: String::new(),
                         spells_to_learn: Vec::new(),
                         variant: BuildingVariant::Castle,
                         garrison: Vec::new(),
@@ -1232,7 +1205,7 @@ fn parse_mapdata(
     }
     (
         tilemap.unwrap(),
-        decomap.unwrap(),
+        decomap,
         {
             buildings.sort_by(|(id, _), (oth_id, _)| id.cmp(oth_id));
             buildings

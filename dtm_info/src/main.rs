@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 
 use clap::*;
 use dt_lib::map::convert::{
-    parse_dtm_map, ArmyTroopsData, BuildingData, EventData, GarrisonUnit, HeroInfoData, PatrolData, ToBool
+    parse_dtm_map, ArmyTroopsData, BuildingData, EventData, GarrisonUnit, HeroInfoData, PatrolData,
+    ToBool,
 };
 use zerocopy::FromZeros;
 #[derive(Parser)]
@@ -16,12 +17,12 @@ struct Args {
     /// To show buildings info
     #[arg(short, default_value_t = false)]
     buildings: bool,
-	/// To show texts
-	#[arg(short, default_value_t = false)]
-	texts: bool,
-	/// To show events
-	#[arg(short, default_value_t = false)]
-	events: bool,
+    /// To show texts
+    #[arg(short, default_value_t = false)]
+    texts: bool,
+    /// To show events
+    #[arg(short, default_value_t = false)]
+    events: bool,
     /// To show map
     #[arg(short, default_value_t = false)]
     map: bool,
@@ -343,14 +344,14 @@ fn main() {
         if_not_zero(empty6, |empty6| println!("Empty6/ is: {:?}", empty6));
         if_not_zero(empty7, |empty7| println!("Empty7/ is: {:?}", empty7));
     }
-	if args.events {
-		dbg!(data.events);
-	}
-	if args.texts {
-		for text in data.text {
-			if !text.is_empty() {
-				print!("{} | ", text);
-			}
-		}
-	}
+    if args.events {
+        dbg!(data.events);
+    }
+    if args.texts {
+        for text in data.text {
+            if !text.is_empty() {
+                print!("{} | ", text);
+            }
+        }
+    }
 }

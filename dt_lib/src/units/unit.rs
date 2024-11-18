@@ -626,78 +626,74 @@ impl Unit {
             target.being_attacked(&damage, self, target_pos, my_pos, battle);
             Some(ActionResult::Melee)
         } else {
-            match self.info.magic_type {
-                None => None,
-                Some(magic_type) => {
-                    let direction = get_magic_direction(magic_type);
-                    match (direction, magic_type, is_enemy) {
-                        (ToAlly, _, false) => match magic_type {
-                            Death(_) | Life(_) => heal_bless(self, target, damage, magic_type),
-                            Elemental(_) => elemental_bless(self, target, damage),
-                        },
-                        (ToAll, _, _) => match (magic_type, is_enemy) {
-                            (Death(_) | Life(_), true) => {
-                                if is_in_back {
-                                    magic_attack(
-                                        self, target, damage, magic_type, my_pos, target_pos,
-                                        battle,
-                                    )
-                                } else {
-                                    None
-                                }
-                            }
-                            (Death(_) | Life(_), false) => {
-                                heal_bless(self, target, damage, magic_type)
-                            }
-                            (Elemental(_), true) => {
-                                if is_in_back {
-                                    elemental_attack(
-                                        self, target, damage, target_pos, my_pos, battle,
-                                    )
-                                } else {
-                                    None
-                                }
-                            }
-                            (Elemental(_), false) => elemental_bless(self, target, damage),
-                        },
-                        (ToEnemy, _, true) => {
-                            if is_in_back {
-                                match magic_type {
-                                    Death(_) | Life(_) => magic_attack(
-                                        self, target, damage, magic_type, my_pos, target_pos,
-                                        battle,
-                                    ),
-                                    Elemental(_) => elemental_attack(
-                                        self, target, damage, target_pos, my_pos, battle,
-                                    ),
-                                }
-                            } else {
-                                None
-                            }
+			let Some(magic_type) = self.info.magic_type else { return None; };
+            let direction = get_magic_direction(magic_type);
+            match (direction, magic_type, is_enemy) {
+                (ToAlly, _, false) => match magic_type {
+                    Death(_) | Life(_) => heal_bless(self, target, damage, magic_type),
+                    Elemental(_) => elemental_bless(self, target, damage),
+                },
+                (ToAll, _, _) => match (magic_type, is_enemy) {
+                    (Death(_) | Life(_), true) => {
+                        if is_in_back {
+                            magic_attack(
+                                self, target, damage, magic_type, my_pos, target_pos,
+                                battle,
+                            )
+                        } else {
+                            None
                         }
-                        (CurseOnly, _, true) => match magic_type {
-                            Death(_) | Life(_) => magic_curse(self, target, damage, magic_type),
-                            Elemental(_) => elemental_curse(self, target, damage),
-                        },
-                        (StrikeOnly, _, true) => {
-                            damage.hand = 0;
-                            damage.ranged = 0;
-                            target.being_attacked(&damage, self, my_pos, target_pos, battle);
-                            Some(ActionResult::Debuff)
+                    }
+                    (Death(_) | Life(_), false) => {
+                        heal_bless(self, target, damage, magic_type)
+                    }
+                    (Elemental(_), true) => {
+                        if is_in_back {
+                            elemental_attack(
+                                self, target, damage, target_pos, my_pos, battle,
+                            )
+                        } else {
+                            None
                         }
-                        (BlessOnly, _, false) => match magic_type {
-                            Life(_) | Death(_) => bless_unit(self, target, damage, magic_type),
-                            Elemental(_) => elemental_bless(self, target, damage),
-                        },
-                        (CureOnly, Life(_) | Death(_), false) => {
-                            heal_unit(self, target, damage, magic_type)
+                    }
+                    (Elemental(_), false) => elemental_bless(self, target, damage),
+                },
+                (ToEnemy, _, true) => {
+                    if is_in_back {
+                        match magic_type {
+                            Death(_) | Life(_) => magic_attack(
+                                self, target, damage, magic_type, my_pos, target_pos,
+                                battle,
+                            ),
+                            Elemental(_) => elemental_attack(
+                                self, target, damage, target_pos, my_pos, battle,
+                            ),
                         }
-                        _ => None,
+                    } else {
+                        None
                     }
                 }
+                (CurseOnly, _, true) => match magic_type {
+                    Death(_) | Life(_) => magic_curse(self, target, damage, magic_type),
+                    Elemental(_) => elemental_curse(self, target, damage),
+                },
+                (StrikeOnly, _, true) => {
+                    damage.hand = 0;
+                    damage.ranged = 0;
+                    target.being_attacked(&damage, self, my_pos, target_pos, battle);
+                    Some(ActionResult::Debuff)
+                }
+                (BlessOnly, _, false) => match magic_type {
+                    Life(_) | Death(_) => bless_unit(self, target, damage, magic_type),
+                    Elemental(_) => elemental_bless(self, target, damage),
+                },
+                (CureOnly, Life(_) | Death(_), false) => {
+                    heal_unit(self, target, damage, magic_type)
+                }
+                _ => None,
             }
-        };
-    }
+        }
+	}
 
     pub fn heal(&mut self, amount: u64) -> bool {
         let effected = self.modified;
