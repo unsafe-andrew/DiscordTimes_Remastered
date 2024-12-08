@@ -4,10 +4,100 @@ use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::{
     parse::{Parse, Parser},
-    parse_macro_input, parse_quote, Data, DeriveInput, Expr, Fields, GenericParam, Generics, Ident,
-    Index, Meta, MetaNameValue,
+    parse_macro_input, parse_quote,
+    punctuated::Punctuated,
+    Data, DataEnum, DeriveInput, Expr, Fields, GenericParam, Generics, Ident, Index, Meta,
+    MetaNameValue,
 };
 
+#[proc_macro_derive(Ini)]
+
+pub fn derive_ini(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let generics = add_trait_bounds(input.generics);
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let name = input.ident;
+    let Data::Enum(data) = input.data else {
+        unimplemented!()
+    };
+    let matched = match_quote(&data, &name);
+    let self_matched = match_self(&data, name.clone());
+    let res = quote!(
+		impl #impl_generics Ini for #name #ty_generics #where_clause {
+			fn eat<'a>(chars: std::str::Chars<'a>) -> Result<(Self, std::str::Chars<'a>), advini::IniParseError> {
+				#matched
+			}
+			fn vomit(&self) -> String {
+				#self_matched
+			}
+		}
+	).into();
+    println!("{}", &res);
+    res
+}
+fn match_self(data: &DataEnum, name: Ident) -> TokenStream {
+    let mut variants = vec![];
+    for variant in data.variants.clone() {
+        let variant_ident = variant.ident.clone();
+        let variant_ident_string = variant.ident.clone().to_string();
+        let field_idents = (0..(variant.fields.len()))
+            .map(|i| Ident::new(&format!("field_{i}"), Span::call_site()))
+            .collect::<Vec<_>>();
+        let braces = if variant.fields.is_empty() {
+            quote!()
+        } else {
+            quote!((#(#field_idents),*))
+        };
+        variants.push(quote!(
+			#name::#variant_ident #braces => {
+				let mut res = [#variant_ident_string.to_string(), #(#field_idents.vomit()), *].join(",");
+				res.push_str(",");
+				res
+			},
+		));
+    }
+    quote!(
+        match self {
+            #(#variants)*
+        }
+    )
+}
+fn match_quote(data: &DataEnum, ident: &Ident) -> TokenStream {
+    let mut variants = vec![];
+    for variant in data.variants.clone() {
+        let variant_ident = variant.ident.clone();
+        let variant_ident_string = variant.ident.clone().to_string();
+        let mut fields = vec![];
+        let field_idents = (0..(variant.fields.len()))
+            .map(|i| Ident::new(&format!("field_{i}"), Span::call_site()))
+            .collect::<Vec<_>>();
+        for (i, field) in variant.fields.iter().enumerate() {
+            let ty = field.ty.clone();
+            let field_name = Ident::new(&format!("field_{i}"), Span::call_site());
+            fields.push(quote!(
+                let (#field_name, chars) = <#ty as advini::Ini>::eat(chars)?;
+            ));
+        }
+        let braces = if variant.fields.is_empty() {
+            quote!()
+        } else {
+            quote! { (#(#field_idents),*) }
+        };
+        variants.push(quote!(
+            #variant_ident_string => {
+                #(#fields)*
+                Ok((#ident::#variant_ident #braces, chars))
+            },
+        ));
+    }
+    quote!(
+        let (variant, chars) = <String as advini::Ini>::eat(chars)?;
+        match &*variant {
+            #(#variants)*
+            _ => { Err(advini::IniParseError::Error("Wrong variant!")) }
+        }
+    )
+}
 #[proc_macro_derive(
     Sections,
     attributes(alias, unused, default_value, inline_parsing, additional)
@@ -21,11 +111,11 @@ pub fn derive_sections(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
     let (from, into, additional) = trait_body(&input.data, &name);
     quote!(
 		impl #impl_generics Sections for #name #ty_generics #where_clause {
-			fn from_section(sec: Section) -> Result<(Self, std::collections::HashMap<String, String>), SectionError> {
+			fn from_section(sec: advini::Section) -> Result<(Self, std::collections::HashMap<String, String>), advini::SectionError> {
 				let prop = sec;
 				#from
 			}
-			fn to_section(&self) -> Section {
+			fn to_section(&self) -> advini::Section {
 				#into
 			}
 		}
@@ -34,7 +124,7 @@ pub fn derive_sections(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
 fn add_trait_bounds(mut generics: Generics) -> Generics {
     for param in &mut generics.params {
         if let GenericParam::Type(ref mut type_param) = *param {
-            type_param.bounds.push(parse_quote!(Ini));
+            type_param.bounds.push(parse_quote!(advini::Ini));
         }
     }
     generics
@@ -188,16 +278,16 @@ fn trait_body(data: &Data, ident: &Ident) -> (TokenStream, TokenStream, TokenStr
             quote!()
         } else {
             quote!(
-               #pattern => #ident = match <#ty_ as Ini>::eat(v) {
+               #pattern => #ident = match <#ty_ as advini::Ini>::eat(v) {
                    Ok((res, chars)) => {
                        v = chars;
                        #res.into()
                    },
-                   Err(IniParseError::Empty(chars)) => {
+                   Err(advini::IniParseError::Empty(chars)) => {
                        v = chars;
                        continue;
                    },
-                   Err(IniParseError::Error(info)) => {
+                   Err(advini::IniParseError::Error(info)) => {
                        println!("{}", info);
                        continue;
                    }
@@ -206,23 +296,25 @@ fn trait_body(data: &Data, ident: &Ident) -> (TokenStream, TokenStream, TokenStr
         }
     });
     let name = &ident;
-    let construct_fields = fields.iter().filter(|f| f.used).map(|f| {
+    let construct_fields = fields.iter().map(|f| {
         let ident = &f.aliases.0;
         if let Some(_) = &f.default {
             quote!(#ident)
         } else {
-            quote!(#ident.unwrap())
+            quote!(#ident: #ident.unwrap())
         }
     });
     let struct_construction = quote! {
-        #name::new( #(#construct_fields),* )
+        #name {
+            #(#construct_fields),*
+        }
+        //#name::new( #(#construct_fields),* )
     };
-    dbg!(&struct_construction.to_string());
     let inlined_fields = fields.iter().filter(|f| f.inline).map(|f| {
         let ident = &f.aliases.0;
         let ty = &f.ty;
         quote!(
-            let res = <#ty as Sections>::from_section(remaining).unwrap();
+            let res = <#ty as advini::Sections>::from_section(remaining).unwrap();
             (#ident, remaining) = (res.0.into(), res.1);
         )
     });
@@ -261,14 +353,22 @@ fn to_section_body(fields: &Vec<FieldInfo>, _ident: &Ident) -> TokenStream {
         let ident = &f.aliases.0;
         let ty = &f.ty;
         if f.ty.to_token_stream().to_string().starts_with("Option") {
-            quote_spanned!( Span::call_site() =>
-                if let Some(val) = &self.#ident {
-                    section.insert(#name.into(), val.vomit());
-                }
-            )
+			if f.inline {
+				quote_spanned!( Span::call_site() =>
+								if self.#ident.is_some() {
+									section.extend(<#ty as advini::Sections>::to_section(&self.#ident));
+								}
+				)
+			} else {
+				quote_spanned!( Span::call_site() =>
+								if let Some(val) = &self.#ident {
+									section.insert(#name.into(), val.vomit());
+								}
+				)
+			}
         } else if f.inline {
             quote_spanned!( Span::call_site() =>
-                section.extend(<#ty as Sections>::to_section(&self.#ident));
+                section.extend(<#ty as advini::Sections>::to_section(&self.#ident));
             )
         } else {
             quote!(

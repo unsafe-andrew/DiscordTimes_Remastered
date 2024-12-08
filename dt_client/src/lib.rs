@@ -81,7 +81,6 @@ pub async fn connect(room: &str, id: &str) -> Connection {
         events_sender: oe_tx,
     }
 }
-
 #[cfg(test)]
 mod tests {
     use futures_util::StreamExt;

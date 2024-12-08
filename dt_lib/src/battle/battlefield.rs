@@ -89,7 +89,7 @@ impl BattleInfo {
         if self.winner.is_some() {
             return None;
         }
-		
+
         fn max_speed(troops: &Vec<TroopType>) -> (usize, &TroopType) {
             troops
                 .iter()
@@ -684,15 +684,19 @@ mod tests {
             let mut expected = gen_expectations(0).chain(gen_expectations(1));
             let left_out = expected.filter(|v| !been.contains(&v)).collect::<Vec<_>>();
             if !left_out.is_empty() {
-				dbg!(iteration);
-				for unit in left_out {
-					let troop = &armies[unit.0].troops[unit.1].get();
-					let unit = dbg!(&troop.unit);
-					dbg!(unit.modified.moves, unit.modified.max_moves, unit.modified.speed);
-					dbg!(troop_inactive(troop));
-					panic!("God damn it!");
-				}
-			}
+                dbg!(iteration);
+                for unit in left_out {
+                    let troop = &armies[unit.0].troops[unit.1].get();
+                    let unit = dbg!(&troop.unit);
+                    dbg!(
+                        unit.modified.moves,
+                        unit.modified.max_moves,
+                        unit.modified.speed
+                    );
+                    dbg!(troop_inactive(troop));
+                    panic!("God damn it!");
+                }
+            }
         }
     }
     #[test]

@@ -108,6 +108,7 @@ impl Animate for DrawBuilder<'_, Image<'_>> {
 }
 
 pub fn load_asset(gfx: &mut Graphics, path: &str) -> Result<Asset<Texture>, String> {
+    dbg!(path);
     Ok(Asset::from_data(
         &*path,
         gfx.create_texture()

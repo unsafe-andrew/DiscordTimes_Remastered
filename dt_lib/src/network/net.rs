@@ -211,7 +211,7 @@ impl GameServer {
                 let army_index = client_id
                     .and_then(|v| self.auth.get(&v).cloned())
                     .unwrap_or(0usize);
-                if let Some(target_army) = gamemap.hitmap[goal.0][goal.1].army {
+                if let Some(target_army) = gamemap.hitmap[goal].army {
                     let Some(army) = gamemap.armys.get(army_index) else {
                         return;
                     };
@@ -340,7 +340,7 @@ impl GameServer {
                             else {
                                 continue;
                             };
-                            if let Some(target_army) = gamemap.hitmap[goal.0][goal.1].army {
+                            if let Some(target_army) = gamemap.hitmap[goal].army {
                                 let Some(army) = gamemap.armys.get(army_index) else {
                                     continue;
                                 };
@@ -408,7 +408,7 @@ impl GameServer {
                 }
                 moved = true;
                 army.pos = army.path.remove(0);
-                if let Some(building) = gamemap.hitmap[army.pos.0][army.pos.1].building {
+                if let Some(building) = gamemap.hitmap[army.pos].building {
                     army.building = Some(building);
                 } else {
                     army.building = None;

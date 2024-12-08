@@ -3703,7 +3703,8 @@ checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 name = "math_thingies"
 version = "0.1.0"
 dependencies = [
- "alkahest",
+ "advini",
+ "alkahest 0.3.0 (git+https://github.com/zakarumych/alkahest.git?rev=99a5b68)",
  "boolinator",
  "num",
 ]

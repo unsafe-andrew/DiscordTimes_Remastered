@@ -1,9 +1,5 @@
 use crate::{
-    battle::troop::Troop,
-    map::map::GameMap,
-    mutrc::SendMut,
-    time::time::Time,
-    units::unit::{Unit, UnitPos},
+    battle::troop::Troop, items::Item, map::map::GameMap, mutrc::SendMut, time::time::Time, units::unit::{Unit, UnitPos}
 };
 use advini::{Ini, IniParseError, Section, SectionError, Sections, SEPARATOR};
 use serde;
@@ -197,42 +193,6 @@ pub struct Conditions {
     #[default_value = "None"]
     pub in_building: Option<usize>,
 }
-impl Conditions {
-    fn new(
-        relative_time: bool,
-        repeat: Option<Time>,
-        activation_time: Time,
-        if_event_executed: Option<usize>,
-        armys_defeated: Option<Vec<usize>>,
-        not_executed: Option<Vec<usize>>,
-        flag_check: String,
-        xp_req: Option<Cmp<u64>>,
-        gold_req: Option<Cmp<u64>>,
-        mana_req: Option<Cmp<u64>>,
-        army_req: Option<Cmp<u64>>,
-        power_req: Option<Cmp<u64>>,
-        hero_has_1_hp: bool,
-        in_building: Option<usize>,
-    ) -> Self {
-        Self {
-            relative_time,
-            executed: false,
-            repeat,
-            activation_time,
-            if_event_executed,
-            army_req,
-            not_executed,
-            flag_check,
-            xp_req,
-            gold_req,
-            mana_req,
-            armys_defeated,
-            hero_has_1_hp,
-            power_req,
-            in_building,
-        }
-    }
-}
 #[derive(
     Clone, Debug, Default, Sections, serde::Serialize, serde::Deserialize, FieldNamesAsArray,
 )]
@@ -266,42 +226,7 @@ pub struct EventResult {
     #[default_value = "None"]
     pub remove_units: Option<Vec<usize>>,
     #[default_value = "None"]
-    pub change_personality: Option<usize>,
-}
-impl EventResult {
-    fn new(
-        lit_lights: Option<Vec<usize>>,
-        delay: (Time, bool),
-        flag_change: String,
-        sub_event: Option<Vec<usize>>,
-        delayed_event: Option<DelayedEvent>,
-        minus_items: Option<Vec<usize>>,
-        plus_items: Option<Vec<usize>>,
-        question: Option<(String, Vec<String>)>,
-        change_xp: i64,
-        change_gold: i64,
-        change_mana: i64,
-        add_units: Option<Vec<usize>>,
-        remove_units: Option<Vec<usize>>,
-        change_personality: Option<usize>,
-    ) -> Self {
-        Self {
-            lit_lights,
-            delay,
-            flag_change,
-            sub_event,
-            delayed_event,
-            minus_items,
-            plus_items,
-            question,
-            change_gold,
-            change_mana,
-            change_personality,
-            change_xp,
-            add_units,
-            remove_units,
-        }
-    }
+    pub change_personality: Option<usize>, // Changes player-controlled army
 }
 
 #[derive(Clone, Debug, Default, Sections, serde::Serialize, serde::Deserialize)]
@@ -486,7 +411,7 @@ pub fn execute_event_as_player(
         if let Some(add_items) = &mut result.plus_items {
             add_items
                 .iter()
-                .for_each(|item| gamemap.armys[player].add_item(*item));
+                .for_each(|item| gamemap.armys[player].add_item(Item { index: *item }));
         }
 
         {

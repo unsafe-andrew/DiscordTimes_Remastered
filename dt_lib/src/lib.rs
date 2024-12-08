@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 pub mod battle;
 pub mod bonuses;
 pub mod effects;

@@ -5,7 +5,9 @@ use crate::{
     },
     parse::LOCALE,
 };
+use advini::Sections;
 use num::abs;
+use once_cell::sync::Lazy;
 
 use super::unitstats::ModifyUnitStats;
 use crate::{
@@ -14,12 +16,16 @@ use crate::{
     items::item::Item,
     units::unit::{MagicDirection::*, MagicType::*},
 };
+use advini::*;
 use alkahest::alkahest;
 use derive_more::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 use math_thingies::Percent;
-use std::fmt::{Debug, Display, Formatter};
+use std::{
+    fmt::{Debug, Display, Formatter},
+    sync::RwLock,
+};
 
-#[derive(Copy, Clone, Debug, Add, Sub, Default)]
+#[derive(Copy, Clone, Debug, Add, Sub, Default, Sections)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub struct Defence {
     pub death_magic: Percent,
@@ -32,6 +38,27 @@ pub struct Defence {
     pub ranged_units: u64,
 }
 impl Defence {
+    pub fn new(
+        death_magic: Percent,
+        elemental_magic: Percent,
+        life_magic: Percent,
+        hand_percent: Percent,
+        ranged_percent: Percent,
+        magic_units: u64,
+        hand_units: u64,
+        ranged_units: u64,
+    ) -> Self {
+        Self {
+            death_magic,
+            elemental_magic,
+            life_magic,
+            hand_percent,
+            hand_units,
+            ranged_percent,
+            ranged_units,
+            magic_units,
+        }
+    }
     pub fn empty() -> Self {
         Self {
             death_magic: Percent::new(0),
@@ -46,7 +73,7 @@ impl Defence {
     }
 }
 
-#[derive(Copy, Clone, Debug, Add, Sub, Default)]
+#[derive(Copy, Clone, Debug, Add, Sub, Default, Sections)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub struct Power {
     pub magic: u64,
@@ -54,6 +81,13 @@ pub struct Power {
     pub hand: u64,
 }
 impl Power {
+    pub fn new(magic: u64, ranged: u64, hand: u64) -> Self {
+        Self {
+            magic,
+            ranged,
+            hand,
+        }
+    }
     pub fn empty() -> Self {
         Self {
             magic: 0,
@@ -63,12 +97,14 @@ impl Power {
     }
 }
 
-#[derive(Copy, Clone, Debug, Add, Sub, Default)]
+#[derive(Copy, Clone, Debug, Add, Sub, Default, Sections)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub struct UnitStats {
     pub hp: i64,
     pub max_hp: i64,
+    #[inline_parsing]
     pub damage: Power,
+    #[inline_parsing]
     pub defence: Defence,
     pub moves: i64,
     pub max_moves: i64,
@@ -92,7 +128,7 @@ impl UnitStats {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Ini)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub enum MagicDirection {
     ToAlly,
@@ -233,21 +269,48 @@ pub enum UnitType {
     Undead,
     Rogue,
 }
-
+/// Used for parsing
+pub static UNITS: Lazy<RwLock<Vec<Unit>>> = Lazy::new(|| RwLock::new(vec![]));
 #[derive(Clone, Debug)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub struct Unit {
     pub stats: UnitStats,
+    //#[unused]
     pub modified: UnitStats,
+    //#[unused]
     pub modify: ModifyUnitStats,
     pub info: UnitInfo,
     pub lvl: UnitLvl,
     pub inventory: UnitInventory,
     pub army: usize,
     pub bonus: Bonus,
+    //#[unused]
     pub effects: Vec<Effect>,
 }
-
+impl Ini for Unit {
+    fn eat(chars: std::str::Chars) -> Result<(Self, std::str::Chars), IniParseError> {
+        let units = &UNITS.read().unwrap();
+        let (unit_id, chars) = String::eat(chars)?;
+        let Some(unit) = (match unit_id.parse::<usize>() {
+            Ok(id) => units.get(id),
+            Err(_) => units.iter().find(|x| x.info.name == unit_id),
+        }) else {
+            return Err(IniParseError::Error("No such unit"));
+        };
+        Ok((unit.clone(), chars))
+    }
+    fn vomit(&self) -> String {
+        UNITS
+            .read()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .find(|x| x.1.info.name == self.info.name)
+            .unwrap()
+            .0
+            .vomit()
+    }
+}
 fn heal_unit(
     me: &mut Unit,
     unit: &mut Unit,
@@ -563,78 +626,74 @@ impl Unit {
             target.being_attacked(&damage, self, target_pos, my_pos, battle);
             Some(ActionResult::Melee)
         } else {
-            match self.info.magic_type {
-                None => None,
-                Some(magic_type) => {
-                    let direction = get_magic_direction(magic_type);
-                    match (direction, magic_type, is_enemy) {
-                        (ToAlly, _, false) => match magic_type {
-                            Death(_) | Life(_) => heal_bless(self, target, damage, magic_type),
-                            Elemental(_) => elemental_bless(self, target, damage),
-                        },
-                        (ToAll, _, _) => match (magic_type, is_enemy) {
-                            (Death(_) | Life(_), true) => {
-                                if is_in_back {
-                                    magic_attack(
-                                        self, target, damage, magic_type, my_pos, target_pos,
-                                        battle,
-                                    )
-                                } else {
-                                    None
-                                }
-                            }
-                            (Death(_) | Life(_), false) => {
-                                heal_bless(self, target, damage, magic_type)
-                            }
-                            (Elemental(_), true) => {
-                                if is_in_back {
-                                    elemental_attack(
-                                        self, target, damage, target_pos, my_pos, battle,
-                                    )
-                                } else {
-                                    None
-                                }
-                            }
-                            (Elemental(_), false) => elemental_bless(self, target, damage),
-                        },
-                        (ToEnemy, _, true) => {
-                            if is_in_back {
-                                match magic_type {
-                                    Death(_) | Life(_) => magic_attack(
-                                        self, target, damage, magic_type, my_pos, target_pos,
-                                        battle,
-                                    ),
-                                    Elemental(_) => elemental_attack(
-                                        self, target, damage, target_pos, my_pos, battle,
-                                    ),
-                                }
-                            } else {
-                                None
-                            }
+			let Some(magic_type) = self.info.magic_type else { return None; };
+            let direction = get_magic_direction(magic_type);
+            match (direction, magic_type, is_enemy) {
+                (ToAlly, _, false) => match magic_type {
+                    Death(_) | Life(_) => heal_bless(self, target, damage, magic_type),
+                    Elemental(_) => elemental_bless(self, target, damage),
+                },
+                (ToAll, _, _) => match (magic_type, is_enemy) {
+                    (Death(_) | Life(_), true) => {
+                        if is_in_back {
+                            magic_attack(
+                                self, target, damage, magic_type, my_pos, target_pos,
+                                battle,
+                            )
+                        } else {
+                            None
                         }
-                        (CurseOnly, _, true) => match magic_type {
-                            Death(_) | Life(_) => magic_curse(self, target, damage, magic_type),
-                            Elemental(_) => elemental_curse(self, target, damage),
-                        },
-                        (StrikeOnly, _, true) => {
-                            damage.hand = 0;
-                            damage.ranged = 0;
-                            target.being_attacked(&damage, self, my_pos, target_pos, battle);
-                            Some(ActionResult::Debuff)
+                    }
+                    (Death(_) | Life(_), false) => {
+                        heal_bless(self, target, damage, magic_type)
+                    }
+                    (Elemental(_), true) => {
+                        if is_in_back {
+                            elemental_attack(
+                                self, target, damage, target_pos, my_pos, battle,
+                            )
+                        } else {
+                            None
                         }
-                        (BlessOnly, _, false) => match magic_type {
-                            Life(_) | Death(_) => bless_unit(self, target, damage, magic_type),
-                            Elemental(_) => elemental_bless(self, target, damage),
-                        },
-                        (CureOnly, Life(_) | Death(_), false) => {
-                            heal_unit(self, target, damage, magic_type)
+                    }
+                    (Elemental(_), false) => elemental_bless(self, target, damage),
+                },
+                (ToEnemy, _, true) => {
+                    if is_in_back {
+                        match magic_type {
+                            Death(_) | Life(_) => magic_attack(
+                                self, target, damage, magic_type, my_pos, target_pos,
+                                battle,
+                            ),
+                            Elemental(_) => elemental_attack(
+                                self, target, damage, target_pos, my_pos, battle,
+                            ),
                         }
-                        _ => None,
+                    } else {
+                        None
                     }
                 }
+                (CurseOnly, _, true) => match magic_type {
+                    Death(_) | Life(_) => magic_curse(self, target, damage, magic_type),
+                    Elemental(_) => elemental_curse(self, target, damage),
+                },
+                (StrikeOnly, _, true) => {
+                    damage.hand = 0;
+                    damage.ranged = 0;
+                    target.being_attacked(&damage, self, my_pos, target_pos, battle);
+                    Some(ActionResult::Debuff)
+                }
+                (BlessOnly, _, false) => match magic_type {
+                    Life(_) | Death(_) => bless_unit(self, target, damage, magic_type),
+                    Elemental(_) => elemental_bless(self, target, damage),
+                },
+                (CureOnly, Life(_) | Death(_), false) => {
+                    heal_unit(self, target, damage, magic_type)
+                }
+                _ => None,
             }
-        };
-    }
+        }
+	}
 
     pub fn heal(&mut self, amount: u64) -> bool {
         let effected = self.modified;

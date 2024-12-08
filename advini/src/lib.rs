@@ -1,3 +1,5 @@
+#![feature(associated_type_defaults)]
+
 pub use advini_derive::*;
 use ini_core::{Item, Parser};
 use num::Num;
@@ -53,9 +55,7 @@ pub fn parse_for_sections_with<'a, S>(
     result
 }
 pub const SEPARATOR: char = ',';
-pub fn parse_string_from_string<'a>(
-    mut chars: Chars<'a>,
-) -> Result<(String, Chars<'a>), IniParseError> {
+pub fn parse_string_from_string(mut chars: Chars) -> Result<(String, Chars), IniParseError> {
     let mut level = (0, false);
     let mut initial_level = 0;
     let mut result_string = String::new();
@@ -145,15 +145,28 @@ where
     ) -> Result<(Self, HashMap<String, String>), &'static str>;
     fn to_section(&self) -> HashMap<String, String>;
 }
+impl<T: Sections> Sections for Option<T> {
+    fn from_section(
+        sec: HashMap<String, String>,
+    ) -> Result<(Self, HashMap<String, String>), &'static str> {
+        T::from_section(sec).and_then(|res| Ok((Some(res.0), res.1)))
+    }
+    fn to_section(&self) -> HashMap<String, String> {
+        let Some(data) = self else {
+            return HashMap::new();
+        };
+        data.to_section()
+    }
+}
 pub trait Ini
 where
     Self: Sized,
 {
-    fn eat<'a>(chars: Chars<'a>) -> Result<(Self, Chars<'a>), IniParseError>;
+    fn eat(chars: Chars) -> Result<(Self, Chars), IniParseError>;
     fn vomit(&self) -> String;
 }
 impl Ini for String {
-    fn eat<'a>(chars: Chars<'a>) -> Result<(Self, Chars<'a>), IniParseError> {
+    fn eat(chars: Chars) -> Result<(Self, Chars), IniParseError> {
         parse_string_from_string(chars)
     }
     fn vomit(&self) -> String {
@@ -174,7 +187,7 @@ impl Ini for String {
     }
 }
 impl Ini for bool {
-    fn eat<'a>(mut chars: Chars<'a>) -> Result<(Self, Chars<'a>), IniParseError> {
+    fn eat(mut chars: Chars) -> Result<(Self, Chars), IniParseError> {
         loop {
             if let Some(chr) = chars.next() {
                 match chr {
@@ -228,7 +241,7 @@ impl Ini for bool {
 // 	}
 // }
 impl Ini for char {
-    fn eat<'a>(mut chars: Chars<'a>) -> Result<(Self, Chars<'a>), IniParseError> {
+    fn eat(mut chars: Chars) -> Result<(Self, Chars), IniParseError> {
         Ok((
             {
                 let chr = match chars.next() {
@@ -251,7 +264,7 @@ impl Ini for char {
 macro_rules! impl_for_num {
     ($ty:ty) => {
         impl Ini for $ty {
-            fn eat<'a>(mut chars: Chars<'a>) -> Result<(Self, Chars<'a>), IniParseError> {
+            fn eat(mut chars: Chars) -> Result<(Self, Chars), IniParseError> {
                 let mut str_repr = String::new();
                 loop {
                     if let Some(chr) = chars.next() {
@@ -310,7 +323,7 @@ macro_rules! tuple_impls {
 
     ([($idx:tt, $typ:ident); $( ($nidx:tt, $ntyp:ident); )*]) => {
 		impl<$typ : Ini, $( $ntyp : Ini),*> Ini for ($typ, $( $ntyp ),*) {
-			fn eat<'a>(mut chars: Chars<'a>) -> Result<(Self, Chars<'a>), IniParseError> {
+			fn eat(mut chars: Chars) -> Result<(Self, Chars), IniParseError> {
 				let result = (
 					{
 						let res;
@@ -347,7 +360,7 @@ tuple_impls!(
 );
 
 impl<T: Ini> Ini for Vec<T> {
-    fn eat<'a>(mut chars: Chars<'a>) -> Result<(Self, Chars<'a>), IniParseError> {
+    fn eat(mut chars: Chars) -> Result<(Self, Chars), IniParseError> {
         let mut new = Vec::new();
         loop {
             let value;

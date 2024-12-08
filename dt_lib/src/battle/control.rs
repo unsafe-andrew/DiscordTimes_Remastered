@@ -1,12 +1,15 @@
 use advini::{Ini, IniParseError};
 use alkahest::*;
+use math_thingies::Percent;
+
+use crate::time::time::Time;
 #[derive(Clone, Debug)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub struct Relations {
-    player: u8,
-    ally: u8,
-    neighbour: u8,
-    enemy: u8,
+    pub player: u8,
+    pub ally: u8,
+    pub neighbour: u8,
+    pub enemy: u8,
 }
 impl Ini for Relations {
     fn eat(chars: std::str::Chars) -> Result<(Self, std::str::Chars), IniParseError> {
@@ -31,9 +34,14 @@ impl Ini for Relations {
     }
 }
 impl Default for Relations {
-	fn default() -> Self {
-		Self { player: 0, ally: 0, neighbour: 128, enemy: 255 }
-	}
+    fn default() -> Self {
+        Self {
+            player: 0,
+            ally: 0,
+            neighbour: 128,
+            enemy: 255,
+        }
+    }
 }
 #[derive(Clone, Debug, Default)]
 #[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
@@ -68,31 +76,41 @@ impl Ini for Control {
 }
 
 #[derive(Clone, Debug, Default)]
+#[alkahest(Deserialize, Serialize, SerializeRef, Formula)]
 pub struct PC_ControlSetings {
-	xp_like_player: bool,
-	xp_add: u64,
-	units_dont_have_money: bool,
-	ignores_ai_armys: bool,
-	targets_player: bool,
-	forbid_random_targets: bool,
-	forbid_random_talks: bool,
-	not_interested_in_buildings: bool,
-	patrol_radius: Option<u64>,
-	relations: Relations,
+    pub xp_like_player: bool,
+    pub xp_add: u64,
+	pub xp_correction: Percent,
+	pub gold_income: u64,
+	pub mana_income: u64,
+	pub speed_correction: Percent,
+    pub units_dont_have_money: bool,
+    pub ignores_ai_armys: bool,
+    pub targets_player: bool,
+    pub forbid_random_targets: bool,
+    pub forbid_random_talks: bool,
+    pub not_interested_in_buildings: bool,
+	pub aggression: u8,
+	pub patrol: u8,
+	pub revive_everyone: bool,
+	pub revive_time: Time,
+	pub garrison_power: u8,
+    pub patrol_radius: Option<u64>,
+    pub relations: Relations,
 }
 #[derive(Clone, Debug)]
 pub enum Target {
-	Army(usize),
-	Building(usize)
+    Army(usize),
+    Building(usize),
 }
 #[derive(Clone, Debug)]
 pub enum Plan {
-	ToTax,
-	ToMarket,
-	ToTalk
+    ToTax,
+    ToMarket,
+    ToTalk,
 }
 #[derive(Clone, Debug, Default)]
 pub struct PC_ControlState {
-	current_target: Option<Target>,
-	plan: Option<Plan>
+    current_target: Option<Target>,
+    plan: Option<Plan>,
 }
